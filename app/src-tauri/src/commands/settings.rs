@@ -3,7 +3,9 @@ use tauri::State;
 
 /// Get the current application settings
 #[tauri::command]
-pub async fn get_settings(settings_manager: State<'_, SettingsManager>) -> Result<AppSettings, String> {
+pub async fn get_settings(
+    settings_manager: State<'_, SettingsManager>,
+) -> Result<AppSettings, String> {
     settings_manager.get()
 }
 

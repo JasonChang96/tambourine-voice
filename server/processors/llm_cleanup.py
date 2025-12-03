@@ -1,14 +1,20 @@
-"""LLM-based text cleanup processor for dictation."""
+"""LLM-based text cleanup processor for dictation using idiomatic Pipecat patterns."""
 
 from typing import Any
 
 from pipecat.frames.frames import (
     Frame,
+    LLMFullResponseEndFrame,
+    LLMFullResponseStartFrame,
     OutputTransportMessageFrame,
+    TextFrame,
     TranscriptionFrame,
 )
+from pipecat.processors.aggregators.openai_llm_context import (
+    OpenAILLMContext,
+    OpenAILLMContextFrame,
+)
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
-from pipecat.services.cerebras.llm import CerebrasLLMService
 
 from utils.logger import logger
 
@@ -28,30 +34,20 @@ Input: "um so basically I was like thinking we should uh you know update the rea
 Output: I was thinking we should update the readme file."""
 
 
-class LLMCleanupProcessor(FrameProcessor):
-    """Processor that uses LLM to clean up transcribed text.
+class TranscriptionToLLMConverter(FrameProcessor):
+    """Converts TranscriptionFrame to OpenAILLMContextFrame for LLM cleanup.
 
-    This processor receives TranscriptionFrames from STT, sends them to
-    an LLM for cleanup (removing filler words, fixing grammar), and
-    outputs cleaned TextFrames.
+    This processor receives accumulated transcription text and converts it
+    to an LLM context with the cleanup system prompt, triggering the LLM
+    service to generate cleaned text.
     """
 
-    def __init__(
-        self,
-        llm_service: CerebrasLLMService,
-        **kwargs: Any,
-    ) -> None:
-        """Initialize LLM cleanup processor.
-
-        Args:
-            llm_service: Configured Cerebras LLM service for text cleanup
-            **kwargs: Additional arguments for FrameProcessor
-        """
+    def __init__(self, **kwargs: Any) -> None:
+        """Initialize the converter."""
         super().__init__(**kwargs)
-        self._llm = llm_service
 
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
-        """Process incoming frames and clean up transcription text.
+        """Convert transcription frames to LLM context frames.
 
         Args:
             frame: The frame to process
@@ -59,56 +55,79 @@ class LLMCleanupProcessor(FrameProcessor):
         """
         await super().process_frame(frame, direction)
 
-        # Only process final TranscriptionFrames (not interim)
         if isinstance(frame, TranscriptionFrame):
             text = frame.text
             if text and text.strip():
-                logger.debug(f"Cleaning transcription: {text[:50]}...")
-                cleaned_text = await self._cleanup_text(text)
-                logger.info(f"Cleaned: '{text}' -> '{cleaned_text}'")
+                logger.debug(f"Converting transcription to LLM context: {text[:50]}...")
 
-                # Push cleaned text as RTVI server message for client compatibility
-                rtvi_message = {
-                    "label": "rtvi-ai",
-                    "type": "server-message",
-                    "data": {"type": "transcript", "text": cleaned_text},
-                }
-                message_frame = OutputTransportMessageFrame(message=rtvi_message)
-                await self.push_frame(message_frame, direction)
+                # Create OpenAI-compatible context with cleanup prompt
+                context = OpenAILLMContext(
+                    messages=[
+                        {"role": "system", "content": CLEANUP_SYSTEM_PROMPT},
+                        {"role": "user", "content": text},
+                    ]
+                )
+
+                # Push context frame to trigger LLM processing
+                await self.push_frame(OpenAILLMContextFrame(context=context), direction)
             return
 
         # Pass through all other frames unchanged
         await self.push_frame(frame, direction)
 
-    async def _cleanup_text(self, text: str) -> str:
-        """Clean up transcribed text using LLM.
+
+class LLMResponseToRTVIConverter(FrameProcessor):
+    """Aggregates LLM response and converts to RTVI message for client.
+
+    This processor collects streamed TextFrames between LLMFullResponseStartFrame
+    and LLMFullResponseEndFrame, then sends the complete cleaned text as an
+    RTVI server message to the client.
+    """
+
+    def __init__(self, **kwargs: Any) -> None:
+        """Initialize the response converter."""
+        super().__init__(**kwargs)
+        self._accumulator: str = ""
+        self._is_accumulating: bool = False
+
+    async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
+        """Accumulate LLM response and convert to RTVI message.
 
         Args:
-            text: Raw transcribed text
-
-        Returns:
-            Cleaned text
+            frame: The frame to process
+            direction: The direction of frame flow
         """
-        try:
-            # Make a single-shot non-streaming call to the LLM
-            response = await self._llm._client.chat.completions.create(
-                model=self._llm.model_name,
-                messages=[
-                    {"role": "system", "content": CLEANUP_SYSTEM_PROMPT},
-                    {"role": "user", "content": text},
-                ],
-                stream=False,
-                temperature=0.3,  # Lower temperature for more consistent cleanup
-                max_tokens=500,
-            )
+        await super().process_frame(frame, direction)
 
-            if response.choices and len(response.choices) > 0:
-                cleaned = response.choices[0].message.content
-                if cleaned:
-                    return cleaned.strip()
-            return text
+        if isinstance(frame, LLMFullResponseStartFrame):
+            # Start accumulating LLM response
+            self._accumulator = ""
+            self._is_accumulating = True
+            return
 
-        except Exception as e:
-            logger.error(f"LLM cleanup failed: {e}")
-            # Fall back to original text if cleanup fails
-            return text
+        if isinstance(frame, TextFrame) and self._is_accumulating:
+            # Accumulate text chunks from LLM
+            self._accumulator += frame.text
+            return
+
+        if isinstance(frame, LLMFullResponseEndFrame):
+            # LLM response complete - send cleaned text to client
+            self._is_accumulating = False
+            cleaned_text = self._accumulator.strip()
+
+            if cleaned_text:
+                logger.info(f"Cleaned text: '{cleaned_text}'")
+
+                # Create RTVI message for client
+                rtvi_message = {
+                    "label": "rtvi-ai",
+                    "type": "server-message",
+                    "data": {"type": "transcript", "text": cleaned_text},
+                }
+                await self.push_frame(OutputTransportMessageFrame(message=rtvi_message), direction)
+
+            self._accumulator = ""
+            return
+
+        # Pass through all other frames unchanged
+        await self.push_frame(frame, direction)

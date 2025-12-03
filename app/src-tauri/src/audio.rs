@@ -1,4 +1,5 @@
-use rodio::{OutputStream, Source};
+use rodio::source::Source;
+use rodio::OutputStreamBuilder;
 use std::thread;
 use std::time::Duration;
 
@@ -19,8 +20,11 @@ pub fn play_sound(sound_type: SoundType) {
     });
 }
 
-fn play_sound_blocking(sound_type: SoundType) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let (_stream, stream_handle) = OutputStream::try_default()?;
+fn play_sound_blocking(
+    sound_type: SoundType,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // rodio 0.21 uses OutputStreamBuilder instead of OutputStream::try_default()
+    let stream = OutputStreamBuilder::open_default_stream()?;
 
     let (frequency, duration_ms) = match sound_type {
         SoundType::RecordingStart => (880.0, 100), // A5 note, short beep
@@ -31,7 +35,8 @@ fn play_sound_blocking(sound_type: SoundType) -> Result<(), Box<dyn std::error::
         .take_duration(Duration::from_millis(duration_ms))
         .amplify(0.3); // Reduce volume to 30%
 
-    stream_handle.play_raw(source.convert_samples())?;
+    // rodio 0.21 uses mixer().add() instead of play_raw()
+    stream.mixer().add(source);
 
     // Wait for the sound to finish playing
     thread::sleep(Duration::from_millis(duration_ms + 50));
@@ -69,7 +74,7 @@ impl Iterator for SineWave {
 }
 
 impl Source for SineWave {
-    fn current_frame_len(&self) -> Option<usize> {
+    fn current_span_len(&self) -> Option<usize> {
         None
     }
 

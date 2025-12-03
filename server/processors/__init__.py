@@ -1,5 +1,5 @@
 """Custom frame processors for voice dictation."""
 
-from processors.llm_cleanup import LLMCleanupProcessor
+from processors.llm_cleanup import LLMResponseToRTVIConverter, TranscriptionToLLMConverter
 
-__all__ = ["LLMCleanupProcessor"]
+__all__ = ["TranscriptionToLLMConverter", "LLMResponseToRTVIConverter"]

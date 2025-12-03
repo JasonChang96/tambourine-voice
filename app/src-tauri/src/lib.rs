@@ -102,7 +102,11 @@ fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
 
     let _tray = TrayIconBuilder::new()
-        .icon(app.default_window_icon().unwrap().clone())
+        .icon(
+            app.default_window_icon()
+                .ok_or("No default window icon configured")?
+                .clone(),
+        )
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
@@ -143,14 +147,12 @@ fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(desktop)]
 fn build_global_shortcut_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     // Define shortcuts
-    let toggle_shortcut =
-        Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::Space);
-    let hold_shortcut =
-        Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::Period);
+    let toggle_shortcut = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::Space);
+    let hold_shortcut = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::Period);
 
     tauri_plugin_global_shortcut::Builder::new()
         .with_shortcuts([toggle_shortcut, hold_shortcut])
-        .unwrap()
+        .expect("Failed to register global shortcuts - check if another instance is running")
         .with_handler(move |app, shortcut, event| {
             let state = app.state::<AppState>();
             let settings_manager = app.state::<SettingsManager>();

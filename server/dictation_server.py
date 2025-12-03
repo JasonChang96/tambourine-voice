@@ -26,7 +26,7 @@ from pipecat.transports.websocket.server import (
 )
 
 from config.settings import Settings
-from processors.llm_cleanup import LLMCleanupProcessor
+from processors.llm_cleanup import LLMResponseToRTVIConverter, TranscriptionToLLMConverter
 from processors.transcription_buffer import TranscriptionBufferProcessor
 from services.llm_service import create_llm_service
 from services.stt_service import create_stt_service
@@ -88,17 +88,23 @@ async def run_server(host: str, port: int, settings: Settings) -> None:
 
     # Initialize processors
     transcription_buffer = TranscriptionBufferProcessor()
-    llm_cleanup = LLMCleanupProcessor(llm_service=llm_service)
+    transcription_to_llm = TranscriptionToLLMConverter()
+    llm_response_converter = LLMResponseToRTVIConverter()
     text_response = TextResponseProcessor()
 
-    # Build pipeline: Audio -> STT -> Buffer -> LLM Cleanup -> Text Response -> Output
-    # The buffer accumulates partial transcriptions until client sends stop-recording
+    # Build pipeline: Audio -> STT -> Buffer -> LLM Converter -> LLM -> Response Converter -> Output
+    # Uses idiomatic Pipecat frame-based pattern:
+    # 1. TranscriptionToLLMConverter: Converts transcription to OpenAILLMContextFrame
+    # 2. LLM Service: Processes context and streams TextFrames
+    # 3. LLMResponseToRTVIConverter: Aggregates response and sends RTVI message
     pipeline = Pipeline(
         [
             transport.input(),  # Audio from Electron client
             stt_service,  # Speech-to-text (produces partial transcriptions)
             transcription_buffer,  # Buffer until user stops speaking
-            llm_cleanup,  # LLM-based text cleanup
+            transcription_to_llm,  # Convert transcription to LLM context
+            llm_service,  # LLM-based text cleanup (streams response)
+            llm_response_converter,  # Aggregate and convert to RTVI message
             text_response,  # Log outgoing text
             transport.output(),  # Send text back to client
         ]
