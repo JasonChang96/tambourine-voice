@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Voice Dictation Server - WebSocket-based Pipecat Server.
 
-A WebSocket server that receives audio from an Electron client,
+A WebSocket server that receives audio from a Tauri client,
 processes it through STT and LLM cleanup, and returns cleaned text.
 
 Usage:
@@ -14,7 +14,12 @@ from typing import Any
 
 import typer
 from loguru import logger
-from pipecat.frames.frames import Frame, InputAudioRawFrame, OutputTransportMessageFrame
+from pipecat.frames.frames import (
+    Frame,
+    InputAudioRawFrame,
+    OutputTransportMessageFrame,
+    TranscriptionFrame,
+)
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
@@ -54,6 +59,8 @@ class DebugFrameProcessor(FrameProcessor):
                     f"[{self._name}] Audio frame #{self._audio_frame_count}: "
                     f"{len(frame.audio)} bytes, {frame.sample_rate}Hz, {frame.num_channels}ch"
                 )
+        elif isinstance(frame, TranscriptionFrame):
+            logger.info(f"[{self._name}] TRANSCRIPTION: '{frame.text}'")
         else:
             logger.info(f"[{self._name}] Frame: {type(frame).__name__}")
 
@@ -64,7 +71,7 @@ class TextResponseProcessor(FrameProcessor):
     """Processor that logs message frames being sent back to the client.
 
     This processor sits at the end of the pipeline before transport.output()
-    to log the final cleaned text being sent to the Electron client.
+    to log the final cleaned text being sent to the Tauri client.
     """
 
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
@@ -112,6 +119,7 @@ async def run_server(host: str, port: int, settings: Settings) -> None:
 
     # Initialize processors
     debug_input = DebugFrameProcessor(name="input")
+    debug_after_stt = DebugFrameProcessor(name="after-stt")
     transcription_buffer = TranscriptionBufferProcessor()
     transcription_to_llm = TranscriptionToLLMConverter()
     llm_response_converter = LLMResponseToRTVIConverter()
@@ -124,9 +132,10 @@ async def run_server(host: str, port: int, settings: Settings) -> None:
     # 3. LLMResponseToRTVIConverter: Aggregates response and sends RTVI message
     pipeline = Pipeline(
         [
-            transport.input(),  # Audio from Electron client
+            transport.input(),  # Audio from Tauri client
             debug_input,  # Debug: log all incoming frames
             stt_service,  # Speech-to-text (produces partial transcriptions)
+            debug_after_stt,  # Debug: log frames after STT
             transcription_buffer,  # Buffer until user stops speaking
             transcription_to_llm,  # Convert transcription to LLM context
             llm_service,  # LLM-based text cleanup (streams response)
@@ -163,7 +172,7 @@ async def run_server(host: str, port: int, settings: Settings) -> None:
     logger.success("Voice Dictation Server Ready!")
     logger.info("=" * 60)
     logger.info(f"WebSocket endpoint: ws://{host}:{port}")
-    logger.info("Waiting for Electron client connection...")
+    logger.info("Waiting for Tauri client connection...")
     logger.info("Press Ctrl+C to stop")
     logger.info("=" * 60)
 

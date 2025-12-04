@@ -7,9 +7,8 @@ then emits a single consolidated transcription for LLM cleanup.
 from datetime import UTC, datetime
 from typing import Any
 
-from pipecat.frames.frames import Frame, TranscriptionFrame
+from pipecat.frames.frames import Frame, InputTransportMessageFrame, TranscriptionFrame
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
-from pipecat.processors.frameworks.rtvi import RTVIClientMessageFrame
 from pipecat.transcriptions.language import Language
 
 from utils.logger import logger
@@ -51,8 +50,23 @@ class TranscriptionBufferProcessor(FrameProcessor):
             # Don't push TranscriptionFrame - we'll emit consolidated version later
             return
 
-        if isinstance(frame, RTVIClientMessageFrame):
-            if frame.type == "start-recording":
+        if isinstance(frame, InputTransportMessageFrame):
+            # Extract message type from the transport message payload
+            # RTVI client-message format: {"type": "client-message", "data": {"t": "start-recording", "d": {}}}
+            message = frame.message
+            message_type = None
+            if isinstance(message, dict):
+                outer_type = message.get("type")
+                if outer_type == "client-message":
+                    # Nested message - extract inner type from "t" field
+                    data = message.get("data", {})
+                    if isinstance(data, dict):
+                        message_type = data.get("t")  # RTVI uses "t" for type
+                else:
+                    message_type = outer_type
+            logger.info(f"Received client message: type={message_type}")
+
+            if message_type == "start-recording":
                 # New recording session - reset buffer
                 logger.info("Start-recording received, resetting buffer")
                 self._buffer = ""
@@ -60,7 +74,7 @@ class TranscriptionBufferProcessor(FrameProcessor):
                 self._last_language = None
                 return
 
-            if frame.type == "stop-recording":
+            if message_type == "stop-recording":
                 # Client explicitly stopped recording - flush the buffer
                 if self._buffer.strip():
                     logger.info(

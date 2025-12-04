@@ -167,7 +167,13 @@ function RecordingControl() {
 			console.log("[Pipecat] Server message:", message);
 			if (isTranscriptMessage(message)) {
 				clearResponseTimeout();
-				await typeTextMutation.mutateAsync(message.text);
+				console.log("[Pipecat] Typing text:", message.text);
+				try {
+					await typeTextMutation.mutateAsync(message.text);
+					console.log("[Pipecat] Text typed successfully");
+				} catch (error) {
+					console.error("[Pipecat] Failed to type text:", error);
+				}
 				addHistoryEntry.mutate(message.text);
 				handleResponse();
 			}
@@ -189,9 +195,10 @@ function RecordingControl() {
 			console.log("[Pipecat] User stopped speaking");
 		};
 
-		const onLocalAudioLevel = (level: number) => {
-			if (level > 0.01) {
-				console.log("[Pipecat] Local audio level:", level.toFixed(3));
+		const onLocalAudioLevel = (level: number | string) => {
+			const numLevel = typeof level === "string" ? parseFloat(level) : level;
+			if (numLevel > 0.01) {
+				console.log("[Pipecat] Local audio level:", numLevel.toFixed(3));
 			}
 		};
 
