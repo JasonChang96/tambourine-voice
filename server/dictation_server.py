@@ -14,6 +14,8 @@ from typing import Any
 
 import typer
 from loguru import logger
+from pipecat.audio.vad.silero import SileroVADAnalyzer
+from pipecat.audio.vad.vad_analyzer import VADParams
 from pipecat.frames.frames import (
     Frame,
     InputAudioRawFrame,
@@ -102,7 +104,7 @@ async def run_server(host: str, port: int, settings: Settings) -> None:
     logger.info(f"Starting WebSocket server on ws://{host}:{port}")
 
     # Create WebSocket transport with protobuf serializer for pipecat-ai/client-js compatibility
-    # No VAD - buffer flushes when client sends stop-recording message
+    # VAD filters background noise - only speech is processed by STT
     transport = WebsocketServerTransport(
         host=host,
         port=port,
@@ -110,6 +112,16 @@ async def run_server(host: str, port: int, settings: Settings) -> None:
             audio_in_enabled=True,
             audio_out_enabled=False,  # No audio output for dictation
             serializer=ProtobufFrameSerializer(),  # Required for @pipecat-ai/websocket-transport
+            vad_enabled=True,
+            vad_audio_passthrough=True,  # Pass audio through but with VAD state
+            vad_analyzer=SileroVADAnalyzer(
+                params=VADParams(
+                    confidence=0.7,  # Speech detection threshold
+                    start_secs=0.2,  # Time before SPEAKING state
+                    stop_secs=0.8,  # Silence time before QUIET state
+                    min_volume=0.6,  # Minimum volume threshold
+                )
+            ),
         ),
     )
 

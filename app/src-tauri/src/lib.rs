@@ -72,6 +72,7 @@ pub fn run() {
             .skip_taskbar(true)
             .resizable(false)
             .focused(false)
+            .focusable(false)
             .visible(true)
             .build()?;
 
