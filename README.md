@@ -231,15 +231,15 @@ The app connects to `localhost:8765` by default via WebRTC. Settings are persist
 
 ## Tech Stack
 
-**Desktop App:** Rust, Tauri
-**Frontend:** TypeScript, React, Vite
-**UI:** Mantine, Tailwind CSS
-**State Management:** Zustand, Tanstack Query
-**Backend:** Python, FastAPI
-**Voice Pipeline:** Pipecat
-**Communications:** WebRTC
-**Validation:** Zod, Pydantic
-**Code Quality:** Biome, Ruff, Ty, Clippy
+- **Desktop App:** Rust, Tauri
+- **Frontend:** TypeScript, React, Vite
+- **UI:** Mantine, Tailwind CSS
+- **State Management:** Zustand, Tanstack Query
+- **Backend:** Python, FastAPI
+- **Voice Pipeline:** Pipecat
+- **Communications:** WebRTC
+- **Validation:** Zod, Pydantic
+- **Code Quality:** Biome, Ruff, Ty, Clippy
 
 ## Acknowledgments
 
