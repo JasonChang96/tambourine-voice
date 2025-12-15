@@ -84,6 +84,7 @@ class ProviderInfo(BaseModel):
 
     value: str
     label: str
+    is_local: bool
 
 
 class AvailableProvidersResponse(BaseModel):
@@ -106,6 +107,7 @@ async def get_available_providers() -> AvailableProvidersResponse:
         ProviderInfo(
             value=provider_id.value,
             label=stt_labels.get(provider_id, provider_id.value),
+            is_local=provider_id == STTProviderId.WHISPER,
         )
         for provider_id in _available_stt_providers
     ]
@@ -114,6 +116,7 @@ async def get_available_providers() -> AvailableProvidersResponse:
         ProviderInfo(
             value=provider_id.value,
             label=llm_labels.get(provider_id, provider_id.value),
+            is_local=provider_id == LLMProviderId.OLLAMA,
         )
         for provider_id in _available_llm_providers
     ]

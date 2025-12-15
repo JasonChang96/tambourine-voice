@@ -1,4 +1,4 @@
-import { Loader, Select, Slider, Text } from "@mantine/core";
+import { Badge, Loader, Select, Slider, Text } from "@mantine/core";
 import { useEffect, useState } from "react";
 import {
 	useAvailableProviders,
@@ -62,17 +62,42 @@ export function ProvidersSettings() {
 		setSliderValue(currentTimeout);
 	}, [currentTimeout]);
 
-	const sttProviderOptions =
-		availableProviders?.stt.map((p) => ({
-			value: p.value,
-			label: p.label,
-		})) ?? [];
+	// Group providers by cloud/local for dropdown display
+	const sttCloudProviders =
+		availableProviders?.stt
+			.filter((p) => !p.is_local)
+			.map((p) => ({ value: p.value, label: p.label })) ?? [];
+	const sttLocalProviders =
+		availableProviders?.stt
+			.filter((p) => p.is_local)
+			.map((p) => ({ value: p.value, label: p.label })) ?? [];
+	const sttProviderOptions = [
+		{ group: "Cloud", items: sttCloudProviders },
+		{ group: "Local", items: sttLocalProviders },
+	];
 
-	const llmProviderOptions =
-		availableProviders?.llm.map((p) => ({
-			value: p.value,
-			label: p.label,
-		})) ?? [];
+	const llmCloudProviders =
+		availableProviders?.llm
+			.filter((p) => !p.is_local)
+			.map((p) => ({ value: p.value, label: p.label })) ?? [];
+	const llmLocalProviders =
+		availableProviders?.llm
+			.filter((p) => p.is_local)
+			.map((p) => ({ value: p.value, label: p.label })) ?? [];
+	const llmProviderOptions = [
+		{ group: "Cloud", items: llmCloudProviders },
+		{ group: "Local", items: llmLocalProviders },
+	];
+
+	// Determine if currently selected provider is local
+	const selectedSttProvider = availableProviders?.stt.find(
+		(p) => p.value === settings?.stt_provider,
+	);
+	const selectedLlmProvider = availableProviders?.llm.find(
+		(p) => p.value === settings?.llm_provider,
+	);
+	const isSttProviderLocal = selectedSttProvider?.is_local ?? false;
+	const isLlmProviderLocal = selectedLlmProvider?.is_local ?? false;
 
 	return (
 		<div className="settings-section animate-in animate-in-delay-1">
@@ -85,24 +110,40 @@ export function ProvidersSettings() {
 							Service for transcribing audio
 						</p>
 					</div>
-					{isLoadingProviderData ? (
-						<Loader size="sm" color="gray" />
-					) : (
-						<Select
-							data={sttProviderOptions}
-							value={settings?.stt_provider ?? null}
-							onChange={handleSTTProviderChange}
-							placeholder="Select provider"
-							disabled={sttProviderOptions.length === 0}
-							styles={{
-								input: {
-									backgroundColor: "var(--bg-elevated)",
-									borderColor: "var(--border-default)",
-									color: "var(--text-primary)",
-								},
-							}}
-						/>
-					)}
+					<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+						{isLoadingProviderData ? (
+							<Loader size="sm" color="gray" />
+						) : (
+							<>
+								<Select
+									data={sttProviderOptions}
+									value={settings?.stt_provider ?? null}
+									onChange={handleSTTProviderChange}
+									placeholder="Select provider"
+									disabled={
+										sttCloudProviders.length === 0 &&
+										sttLocalProviders.length === 0
+									}
+									styles={{
+										input: {
+											backgroundColor: "var(--bg-elevated)",
+											borderColor: "var(--border-default)",
+											color: "var(--text-primary)",
+										},
+									}}
+								/>
+								{settings?.stt_provider && (
+									<Badge
+										size="xs"
+										variant="light"
+										color={isSttProviderLocal ? "teal" : "blue"}
+									>
+										{isSttProviderLocal ? "Local" : "Cloud"}
+									</Badge>
+								)}
+							</>
+						)}
+					</div>
 				</div>
 				<div className="settings-row" style={{ marginTop: 16 }}>
 					<div>
@@ -111,24 +152,40 @@ export function ProvidersSettings() {
 							AI service for text formatting
 						</p>
 					</div>
-					{isLoadingProviderData ? (
-						<Loader size="sm" color="gray" />
-					) : (
-						<Select
-							data={llmProviderOptions}
-							value={settings?.llm_provider ?? null}
-							onChange={handleLLMProviderChange}
-							placeholder="Select provider"
-							disabled={llmProviderOptions.length === 0}
-							styles={{
-								input: {
-									backgroundColor: "var(--bg-elevated)",
-									borderColor: "var(--border-default)",
-									color: "var(--text-primary)",
-								},
-							}}
-						/>
-					)}
+					<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+						{isLoadingProviderData ? (
+							<Loader size="sm" color="gray" />
+						) : (
+							<>
+								<Select
+									data={llmProviderOptions}
+									value={settings?.llm_provider ?? null}
+									onChange={handleLLMProviderChange}
+									placeholder="Select provider"
+									disabled={
+										llmCloudProviders.length === 0 &&
+										llmLocalProviders.length === 0
+									}
+									styles={{
+										input: {
+											backgroundColor: "var(--bg-elevated)",
+											borderColor: "var(--border-default)",
+											color: "var(--text-primary)",
+										},
+									}}
+								/>
+								{settings?.llm_provider && (
+									<Badge
+										size="xs"
+										variant="light"
+										color={isLlmProviderLocal ? "teal" : "blue"}
+									>
+										{isLlmProviderLocal ? "Local" : "Cloud"}
+									</Badge>
+								)}
+							</>
+						)}
+					</div>
 				</div>
 				<div className="settings-row" style={{ marginTop: 16 }}>
 					<div style={{ flex: 1 }}>

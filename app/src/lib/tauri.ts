@@ -389,6 +389,7 @@ export interface DefaultSectionsResponse {
 interface ProviderInfo {
 	value: string;
 	label: string;
+	is_local: boolean;
 }
 
 interface AvailableProvidersResponse {
