@@ -10,6 +10,7 @@ Usage:
 """
 
 import asyncio
+import re
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Annotated, Any, Final, cast
@@ -18,6 +19,7 @@ import typer
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from loguru import logger
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.frames.frames import HeartbeatFrame
@@ -55,6 +57,55 @@ from utils.observers import PipelineLogObserver
 ICE_SERVERS: Final[list[IceServer]] = [
     IceServer(urls="stun:stun.l.google.com:19302"),
 ]
+
+# Pattern to match mDNS ICE candidates in SDP (e.g., "abc123-def4.local")
+# These candidates only work for local network peers and cause aioice state
+# issues when resolution fails on cloud deployments.
+MDNS_CANDIDATE_PATTERN: Final[re.Pattern[str]] = re.compile(
+    r"^a=candidate:.*\s[a-f0-9-]+\.local\s.*$",
+    re.MULTILINE | re.IGNORECASE,
+)
+
+
+def filter_mdns_candidates_from_sdp(sdp: str) -> str:
+    """Remove mDNS ICE candidates from SDP to prevent aioice resolution issues.
+
+    macOS WebKit sends mDNS candidates (*.local addresses) for privacy, but these
+    cannot be resolved on cloud servers (different network). The aioice library
+    accumulates stale state when mDNS resolution fails, causing subsequent
+    connections to fail with 'NoneType' has no attribute 'sendto'.
+
+    Filtering these candidates is safe because:
+    1. mDNS only works on local networks (same broadcast domain)
+    2. Client-to-cloud connections use srflx (STUN) candidates instead
+    3. Connection still works via server-reflexive candidates
+
+    Args:
+        sdp: The original SDP string from the client
+
+    Returns:
+        SDP with mDNS candidates removed
+    """
+    filtered_sdp = MDNS_CANDIDATE_PATTERN.sub("", sdp)
+    # Clean up any resulting blank lines
+    filtered_sdp = re.sub(r"\n{3,}", "\n\n", filtered_sdp)
+    return filtered_sdp
+
+
+def is_mdns_candidate(candidate: str) -> bool:
+    """Check if an ICE candidate string contains an mDNS address (.local).
+
+    mDNS candidates use UUIDs like: a8b3c4d5-e6f7-8901-2345-6789abcdef01.local
+    These only work on local networks and cause aioice state issues when
+    resolution fails on cloud servers.
+
+    Args:
+        candidate: The ICE candidate string (SDP a=candidate line content)
+
+    Returns:
+        True if this is an mDNS candidate, False otherwise
+    """
+    return bool(re.search(r"\s[a-f0-9-]+\.local\s", candidate, re.IGNORECASE))
 
 
 @dataclass
@@ -277,6 +328,25 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# Global exception handler to ensure CORS headers are included in error responses.
+# FastAPI's CORSMiddleware may not add headers to unhandled exception responses,
+# causing WebKit (macOS) to block them and report misleading "CORS errors".
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Ensure CORS headers are included even in error responses."""
+    logger.error(f"Unhandled exception: {exc}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": str(exc)},
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "*",
+            "Access-Control-Allow-Headers": "*",
+        },
+    )
+
+
 # Include config routes
 app.include_router(config_router)
 
@@ -300,12 +370,25 @@ async def webrtc_offer(
     """Handle WebRTC offer from client using SmallWebRTCRequestHandler.
 
     This endpoint handles the WebRTC signaling handshake:
-    1. Receives SDP offer from client
+    1. Receives SDP offer from client (filtering mDNS candidates)
     2. Creates or reuses a SmallWebRTCConnection via the handler
     3. Returns SDP answer to client
     4. Spawns the Pipecat pipeline as a background task
     """
     services: AppServices = request.app.state.services
+
+    # Filter mDNS candidates from SDP to prevent aioice resolution issues on macOS.
+    # See filter_mdns_candidates_from_sdp() docstring for details.
+    filtered_sdp = filter_mdns_candidates_from_sdp(webrtc_request.sdp)
+    if filtered_sdp != webrtc_request.sdp:
+        logger.info("Filtered mDNS candidates from SDP offer (macOS client)")
+        webrtc_request = SmallWebRTCRequest(
+            sdp=filtered_sdp,
+            type=webrtc_request.type,
+            pc_id=webrtc_request.pc_id,
+            restart_pc=webrtc_request.restart_pc,
+            request_data=webrtc_request.request_data,
+        )
 
     async def connection_callback(connection: SmallWebRTCConnection) -> None:
         """Callback invoked when connection is ready - spawns the pipeline."""
@@ -326,9 +409,36 @@ async def webrtc_ice_candidate(
     patch_request: SmallWebRTCPatchRequest,
     request: Request,
 ) -> dict[str, str]:
-    """Handle ICE candidate patches for WebRTC connections."""
+    """Handle ICE candidate patches for WebRTC connections.
+
+    Filters mDNS ICE candidates sent via ICE trickle to prevent aioice
+    resolution issues. macOS WebKit sends mDNS candidates (.local addresses)
+    for privacy, but these cause state accumulation issues in aioice.
+    """
     services: AppServices = request.app.state.services
-    await services.webrtc_handler.handle_patch_request(patch_request)
+
+    # Filter out mDNS candidates to prevent aioice resolution issues
+    # macOS WebKit sends mDNS candidates via ICE trickle (not in SDP offer)
+    if patch_request.candidates:
+        original_count = len(patch_request.candidates)
+        filtered_candidates = [
+            c for c in patch_request.candidates if not is_mdns_candidate(c.candidate)
+        ]
+        filtered_count = original_count - len(filtered_candidates)
+
+        if filtered_count > 0:
+            logger.info(
+                f"Filtered {filtered_count} mDNS ICE candidates from trickle (macOS client)"
+            )
+            patch_request = SmallWebRTCPatchRequest(
+                pc_id=patch_request.pc_id,
+                candidates=filtered_candidates,
+            )
+
+    # Only process if we have candidates remaining after filtering
+    if patch_request.candidates:
+        await services.webrtc_handler.handle_patch_request(patch_request)
+
     return {"status": "success"}
 
 
