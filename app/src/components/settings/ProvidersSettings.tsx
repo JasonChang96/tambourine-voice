@@ -1,5 +1,5 @@
 import { Badge, Loader, Select, Slider, Text } from "@mantine/core";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
 	useAvailableProviders,
 	useSettings,
@@ -22,34 +22,43 @@ export function ProvidersSettings() {
 	const updateLLMProvider = useUpdateLLMProvider();
 	const updateSTTTimeout = useUpdateSTTTimeout();
 
-	const handleSTTProviderChange = (value: string | null) => {
-		if (!value) return;
-		// Save to local settings (Tauri) then notify overlay window to sync to server
-		updateSTTProvider.mutate(value, {
-			onSuccess: () => {
-				tauriAPI.emitSettingsChanged();
-			},
-		});
-	};
+	const handleSTTProviderChange = useCallback(
+		(value: string | null) => {
+			if (!value) return;
+			// Save to local settings (Tauri) then notify overlay window to sync to server
+			updateSTTProvider.mutate(value, {
+				onSuccess: () => {
+					tauriAPI.emitSettingsChanged();
+				},
+			});
+		},
+		[updateSTTProvider],
+	);
 
-	const handleLLMProviderChange = (value: string | null) => {
-		if (!value) return;
-		// Save to local settings (Tauri) then notify overlay window to sync to server
-		updateLLMProvider.mutate(value, {
-			onSuccess: () => {
-				tauriAPI.emitSettingsChanged();
-			},
-		});
-	};
+	const handleLLMProviderChange = useCallback(
+		(value: string | null) => {
+			if (!value) return;
+			// Save to local settings (Tauri) then notify overlay window to sync to server
+			updateLLMProvider.mutate(value, {
+				onSuccess: () => {
+					tauriAPI.emitSettingsChanged();
+				},
+			});
+		},
+		[updateLLMProvider],
+	);
 
-	const handleSTTTimeoutChange = (value: number) => {
-		// Save to local settings (Tauri) then notify overlay window to sync to server
-		updateSTTTimeout.mutate(value, {
-			onSuccess: () => {
-				tauriAPI.emitSettingsChanged();
-			},
-		});
-	};
+	const handleSTTTimeoutChange = useCallback(
+		(value: number) => {
+			// Save to local settings (Tauri) then notify overlay window to sync to server
+			updateSTTTimeout.mutate(value, {
+				onSuccess: () => {
+					tauriAPI.emitSettingsChanged();
+				},
+			});
+		},
+		[updateSTTTimeout],
+	);
 
 	// Get the current timeout value from settings, falling back to default
 	const currentTimeout = settings?.stt_timeout_seconds ?? DEFAULT_STT_TIMEOUT;
@@ -62,44 +71,62 @@ export function ProvidersSettings() {
 		setSliderValue(currentTimeout);
 	}, [currentTimeout]);
 
-	// Group providers by cloud/local for dropdown display
-	const sttCloudProviders =
-		availableProviders?.stt
-			.filter((p) => !p.is_local)
-			.map((p) => ({
-				value: p.value,
-				label: p.model ? `${p.label} (${p.model})` : p.label,
-			})) ?? [];
-	const sttLocalProviders =
-		availableProviders?.stt
-			.filter((p) => p.is_local)
-			.map((p) => ({
-				value: p.value,
-				label: p.model ? `${p.label} (${p.model})` : p.label,
-			})) ?? [];
-	const sttProviderOptions = [
-		{ group: "Cloud", items: sttCloudProviders },
-		{ group: "Local", items: sttLocalProviders },
-	];
+	// Group providers by cloud/local for dropdown display (memoized to prevent unnecessary re-renders)
+	const sttCloudProviders = useMemo(
+		() =>
+			availableProviders?.stt
+				.filter((p) => !p.is_local)
+				.map((p) => ({
+					value: p.value,
+					label: p.model ? `${p.label} (${p.model})` : p.label,
+				})) ?? [],
+		[availableProviders],
+	);
+	const sttLocalProviders = useMemo(
+		() =>
+			availableProviders?.stt
+				.filter((p) => p.is_local)
+				.map((p) => ({
+					value: p.value,
+					label: p.model ? `${p.label} (${p.model})` : p.label,
+				})) ?? [],
+		[availableProviders],
+	);
+	const sttProviderOptions = useMemo(
+		() => [
+			{ group: "Cloud", items: sttCloudProviders },
+			{ group: "Local", items: sttLocalProviders },
+		],
+		[sttCloudProviders, sttLocalProviders],
+	);
 
-	const llmCloudProviders =
-		availableProviders?.llm
-			.filter((p) => !p.is_local)
-			.map((p) => ({
-				value: p.value,
-				label: p.model ? `${p.label} (${p.model})` : p.label,
-			})) ?? [];
-	const llmLocalProviders =
-		availableProviders?.llm
-			.filter((p) => p.is_local)
-			.map((p) => ({
-				value: p.value,
-				label: p.model ? `${p.label} (${p.model})` : p.label,
-			})) ?? [];
-	const llmProviderOptions = [
-		{ group: "Cloud", items: llmCloudProviders },
-		{ group: "Local", items: llmLocalProviders },
-	];
+	const llmCloudProviders = useMemo(
+		() =>
+			availableProviders?.llm
+				.filter((p) => !p.is_local)
+				.map((p) => ({
+					value: p.value,
+					label: p.model ? `${p.label} (${p.model})` : p.label,
+				})) ?? [],
+		[availableProviders],
+	);
+	const llmLocalProviders = useMemo(
+		() =>
+			availableProviders?.llm
+				.filter((p) => p.is_local)
+				.map((p) => ({
+					value: p.value,
+					label: p.model ? `${p.label} (${p.model})` : p.label,
+				})) ?? [],
+		[availableProviders],
+	);
+	const llmProviderOptions = useMemo(
+		() => [
+			{ group: "Cloud", items: llmCloudProviders },
+			{ group: "Local", items: llmLocalProviders },
+		],
+		[llmCloudProviders, llmLocalProviders],
+	);
 
 	// Determine if currently selected provider is local
 	const selectedSttProvider = availableProviders?.stt.find(

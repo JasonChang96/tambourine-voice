@@ -217,29 +217,48 @@ export const tauriAPI = {
 	},
 
 	// Settings API - using store plugin directly
+	// Parallelized with Promise.all for faster loading (all reads are independent)
 	async getSettings(): Promise<AppSettings> {
 		const store = await getStore();
+
+		const [
+			toggleHotkey,
+			holdHotkey,
+			pasteLastHotkey,
+			selectedMicId,
+			soundEnabled,
+			cleanupPromptSections,
+			sttProvider,
+			llmProvider,
+			autoMuteAudio,
+			sttTimeoutSeconds,
+			serverUrl,
+		] = await Promise.all([
+			store.get<HotkeyConfig>("toggle_hotkey"),
+			store.get<HotkeyConfig>("hold_hotkey"),
+			store.get<HotkeyConfig>("paste_last_hotkey"),
+			store.get<string | null>("selected_mic_id"),
+			store.get<boolean>("sound_enabled"),
+			store.get<CleanupPromptSections | null>("cleanup_prompt_sections"),
+			store.get<string | null>("stt_provider"),
+			store.get<string | null>("llm_provider"),
+			store.get<boolean>("auto_mute_audio"),
+			store.get<number | null>("stt_timeout_seconds"),
+			store.get<string>("server_url"),
+		]);
+
 		return {
-			toggle_hotkey:
-				(await store.get<HotkeyConfig>("toggle_hotkey")) ?? defaultToggleHotkey,
-			hold_hotkey:
-				(await store.get<HotkeyConfig>("hold_hotkey")) ?? defaultHoldHotkey,
-			paste_last_hotkey:
-				(await store.get<HotkeyConfig>("paste_last_hotkey")) ??
-				defaultPasteLastHotkey,
-			selected_mic_id:
-				(await store.get<string | null>("selected_mic_id")) ?? null,
-			sound_enabled: (await store.get<boolean>("sound_enabled")) ?? true,
-			cleanup_prompt_sections:
-				(await store.get<CleanupPromptSections | null>(
-					"cleanup_prompt_sections",
-				)) ?? null,
-			stt_provider: (await store.get<string | null>("stt_provider")) ?? null,
-			llm_provider: (await store.get<string | null>("llm_provider")) ?? null,
-			auto_mute_audio: (await store.get<boolean>("auto_mute_audio")) ?? false,
-			stt_timeout_seconds:
-				(await store.get<number | null>("stt_timeout_seconds")) ?? null,
-			server_url: (await store.get<string>("server_url")) ?? DEFAULT_SERVER_URL,
+			toggle_hotkey: toggleHotkey ?? defaultToggleHotkey,
+			hold_hotkey: holdHotkey ?? defaultHoldHotkey,
+			paste_last_hotkey: pasteLastHotkey ?? defaultPasteLastHotkey,
+			selected_mic_id: selectedMicId ?? null,
+			sound_enabled: soundEnabled ?? true,
+			cleanup_prompt_sections: cleanupPromptSections ?? null,
+			stt_provider: sttProvider ?? null,
+			llm_provider: llmProvider ?? null,
+			auto_mute_audio: autoMuteAudio ?? false,
+			stt_timeout_seconds: sttTimeoutSeconds ?? null,
+			server_url: serverUrl ?? DEFAULT_SERVER_URL,
 		};
 	},
 

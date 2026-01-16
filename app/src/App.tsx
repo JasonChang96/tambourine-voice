@@ -5,13 +5,11 @@ import { AlertCircle, Home, Settings } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { HistoryFeed } from "./components/HistoryFeed";
 import { Logo } from "./components/Logo";
-import {
-	AudioSettings,
-	ConnectionSettings,
-	HotkeySettings,
-	PromptSettings,
-	ProvidersSettings,
-} from "./components/settings";
+import { AudioSettings } from "./components/settings/AudioSettings";
+import { ConnectionSettings } from "./components/settings/ConnectionSettings";
+import { HotkeySettings } from "./components/settings/HotkeySettings";
+import { PromptSettings } from "./components/settings/PromptSettings";
+import { ProvidersSettings } from "./components/settings/ProvidersSettings";
 import {
 	DEFAULT_HOLD_HOTKEY,
 	DEFAULT_PASTE_LAST_HOTKEY,

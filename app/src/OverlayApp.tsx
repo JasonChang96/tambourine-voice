@@ -94,6 +94,35 @@ function sendConfigMessages(
 	}
 }
 
+// Hoisted static JSX for loading states (avoids recreation on every render)
+const LoadingSpinner = (
+	<div
+		style={{
+			width: 48,
+			height: 48,
+			display: "flex",
+			alignItems: "center",
+			justifyContent: "center",
+		}}
+	>
+		<Loader size="sm" color="white" />
+	</div>
+);
+
+const InitialLoadingSpinner = (
+	<div
+		className="flex items-center justify-center"
+		style={{
+			width: 48,
+			height: 48,
+			backgroundColor: "rgba(0, 0, 0, 0.9)",
+			borderRadius: 12,
+		}}
+	>
+		<Loader size="xs" color="white" />
+	</div>
+);
+
 function RecordingControl() {
 	const client = usePipecatClient();
 	const queryClient = useQueryClient();
@@ -725,17 +754,7 @@ function RecordingControl() {
 			state === "disconnected" ||
 			state === "connecting" ||
 			isMicAcquiring ? (
-				<div
-					style={{
-						width: 48,
-						height: 48,
-						display: "flex",
-						alignItems: "center",
-						justifyContent: "center",
-					}}
-				>
-					<Loader size="sm" color="white" />
-				</div>
+				LoadingSpinner
 			) : (
 				<UserAudioComponent
 					onClick={handleClick}
@@ -800,19 +819,7 @@ export default function OverlayApp() {
 	}, []);
 
 	if (!client || !devicesReady) {
-		return (
-			<div
-				className="flex items-center justify-center"
-				style={{
-					width: 48,
-					height: 48,
-					backgroundColor: "rgba(0, 0, 0, 0.9)",
-					borderRadius: 12,
-				}}
-			>
-				<Loader size="xs" color="white" />
-			</div>
-		);
+		return InitialLoadingSpinner;
 	}
 
 	return (

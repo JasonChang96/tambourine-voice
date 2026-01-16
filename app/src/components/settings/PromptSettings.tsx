@@ -1,5 +1,5 @@
 import { Accordion, Loader } from "@mantine/core";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
 	useDefaultSections,
 	useSettings,
@@ -75,79 +75,94 @@ export function PromptSettings() {
 	}, [settings, defaultSections]);
 
 	// Helper to build CleanupPromptSections from local state with optional overrides
-	const buildSections = (overrides?: {
-		key: SectionKey;
-		enabled?: boolean;
-		content?: string | null;
-	}): CleanupPromptSections => {
-		const getContent = (key: SectionKey): string | null => {
-			const content =
-				overrides?.key === key && overrides.content !== undefined
-					? overrides.content
-					: localSections[key].content;
+	const buildSections = useCallback(
+		(overrides?: {
+			key: SectionKey;
+			enabled?: boolean;
+			content?: string | null;
+		}): CleanupPromptSections => {
+			const getContent = (key: SectionKey): string | null => {
+				const content =
+					overrides?.key === key && overrides.content !== undefined
+						? overrides.content
+						: localSections[key].content;
 
-			// Return null if content matches default (to use server default)
-			if (content === defaultSections?.[key]) {
-				return null;
-			}
-			return content || null;
-		};
+				// Return null if content matches default (to use server default)
+				if (content === defaultSections?.[key]) {
+					return null;
+				}
+				return content || null;
+			};
 
-		const getEnabled = (key: SectionKey): boolean => {
-			return overrides?.key === key && overrides.enabled !== undefined
-				? overrides.enabled
-				: localSections[key].enabled;
-		};
+			const getEnabled = (key: SectionKey): boolean => {
+				return overrides?.key === key && overrides.enabled !== undefined
+					? overrides.enabled
+					: localSections[key].enabled;
+			};
 
-		return {
-			main: { enabled: getEnabled("main"), content: getContent("main") },
-			advanced: {
-				enabled: getEnabled("advanced"),
-				content: getContent("advanced"),
-			},
-			dictionary: {
-				enabled: getEnabled("dictionary"),
-				content: getContent("dictionary"),
-			},
-		};
-	};
+			return {
+				main: { enabled: getEnabled("main"), content: getContent("main") },
+				advanced: {
+					enabled: getEnabled("advanced"),
+					content: getContent("advanced"),
+				},
+				dictionary: {
+					enabled: getEnabled("dictionary"),
+					content: getContent("dictionary"),
+				},
+			};
+		},
+		[localSections, defaultSections],
+	);
 
 	// Save all sections to Tauri and notify overlay window to sync to server
-	const saveAllSections = (sections: CleanupPromptSections) => {
-		updateCleanupPromptSections.mutate(sections, {
-			onSuccess: () => {
-				tauriAPI.emitSettingsChanged();
-			},
-		});
-	};
+	const saveAllSections = useCallback(
+		(sections: CleanupPromptSections) => {
+			updateCleanupPromptSections.mutate(sections, {
+				onSuccess: () => {
+					tauriAPI.emitSettingsChanged();
+				},
+			});
+		},
+		[updateCleanupPromptSections],
+	);
 
 	// Generic toggle handler
-	const handleToggle = (key: SectionKey, checked: boolean) => {
-		setLocalSections((prev) => ({
-			...prev,
-			[key]: { ...prev[key], enabled: checked },
-		}));
-		saveAllSections(buildSections({ key, enabled: checked }));
-	};
+	const handleToggle = useCallback(
+		(key: SectionKey, checked: boolean) => {
+			setLocalSections((prev) => ({
+				...prev,
+				[key]: { ...prev[key], enabled: checked },
+			}));
+			saveAllSections(buildSections({ key, enabled: checked }));
+		},
+		[buildSections, saveAllSections],
+	);
 
 	// Generic save handler
-	const handleSave = (key: SectionKey, content: string) => {
-		setLocalSections((prev) => ({
-			...prev,
-			[key]: { ...prev[key], content },
-		}));
-		saveAllSections(buildSections({ key, content }));
-	};
+	const handleSave = useCallback(
+		(key: SectionKey, content: string) => {
+			setLocalSections((prev) => ({
+				...prev,
+				[key]: { ...prev[key], content },
+			}));
+			saveAllSections(buildSections({ key, content }));
+		},
+		[buildSections, saveAllSections],
+	);
 
 	// Generic reset handler
-	const handleReset = (key: SectionKey) => {
-		const defaultContent = defaultSections?.[key] ?? "";
-		setLocalSections((prev) => ({
-			...prev,
-			[key]: { ...prev[key], content: defaultContent },
-		}));
-		saveAllSections(buildSections({ key, content: null }));
-	};
+	const handleReset = useCallback(
+		(key: SectionKey) => {
+			const defaultContent = defaultSections?.[key] ?? "";
+			setLocalSections((prev) => ({
+				...prev,
+				[key]: { ...prev[key], content: defaultContent },
+			}));
+			saveAllSections(buildSections({ key, content: null }));
+		},
+		[defaultSections, buildSections, saveAllSections],
+	);
 
 	return (
 		<div className="settings-section animate-in animate-in-delay-4">

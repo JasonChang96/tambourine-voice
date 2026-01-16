@@ -3,7 +3,7 @@ import { useClipboard, useDisclosure } from "@mantine/hooks";
 import { useQueryClient } from "@tanstack/react-query";
 import { format, isToday, isYesterday } from "date-fns";
 import { Copy, MessageSquare, Trash2 } from "lucide-react";
-import { useEffect } from "react";
+import { memo, useCallback, useEffect, useMemo } from "react";
 import {
 	useClearHistory,
 	useDeleteHistoryEntry,
@@ -47,6 +47,49 @@ function groupHistoryByDate(
 	return Object.values(groups);
 }
 
+// Memoized history item component to prevent re-renders when parent updates
+interface HistoryItemProps {
+	entry: { id: string; text: string; timestamp: string };
+	onCopy: (text: string) => void;
+	onDelete: (id: string) => void;
+	isDeleting: boolean;
+}
+
+const HistoryItem = memo(function HistoryItem({
+	entry,
+	onCopy,
+	onDelete,
+	isDeleting,
+}: HistoryItemProps) {
+	return (
+		<div className="history-item">
+			<span className="history-time">{formatTime(entry.timestamp)}</span>
+			<p className="history-text">{entry.text}</p>
+			<div className="history-actions">
+				<ActionIcon
+					variant="subtle"
+					size="sm"
+					color="gray"
+					onClick={() => onCopy(entry.text)}
+					title="Copy to clipboard"
+				>
+					<Copy size={14} />
+				</ActionIcon>
+				<ActionIcon
+					variant="subtle"
+					size="sm"
+					color="red"
+					onClick={() => onDelete(entry.id)}
+					title="Delete"
+					disabled={isDeleting}
+				>
+					<Trash2 size={14} />
+				</ActionIcon>
+			</div>
+		</div>
+	);
+});
+
 export function HistoryFeed() {
 	const queryClient = useQueryClient();
 	const { data: history, isLoading, error } = useHistory(100);
@@ -73,9 +116,19 @@ export function HistoryFeed() {
 		};
 	}, [queryClient]);
 
-	const handleDelete = (id: string) => {
-		deleteEntry.mutate(id);
-	};
+	const handleDelete = useCallback(
+		(id: string) => {
+			deleteEntry.mutate(id);
+		},
+		[deleteEntry],
+	);
+
+	const handleCopy = useCallback(
+		(text: string) => {
+			clipboard.copy(text);
+		},
+		[clipboard],
+	);
 
 	const handleClearAll = () => {
 		clearHistory.mutate(undefined, {
@@ -84,6 +137,12 @@ export function HistoryFeed() {
 			},
 		});
 	};
+
+	// useMemo must be called unconditionally (before any early returns)
+	const groupedHistory = useMemo(
+		() => groupHistoryByDate(history ?? []),
+		[history],
+	);
 
 	if (isLoading) {
 		return (
@@ -130,8 +189,6 @@ export function HistoryFeed() {
 			</div>
 		);
 	}
-
-	const groupedHistory = groupHistoryByDate(history);
 
 	return (
 		<div className="animate-in animate-in-delay-2">
@@ -183,33 +240,13 @@ export function HistoryFeed() {
 					</p>
 					<div className="history-feed">
 						{group.items.map((entry) => (
-							<div key={entry.id} className="history-item">
-								<span className="history-time">
-									{formatTime(entry.timestamp)}
-								</span>
-								<p className="history-text">{entry.text}</p>
-								<div className="history-actions">
-									<ActionIcon
-										variant="subtle"
-										size="sm"
-										color="gray"
-										onClick={() => clipboard.copy(entry.text)}
-										title="Copy to clipboard"
-									>
-										<Copy size={14} />
-									</ActionIcon>
-									<ActionIcon
-										variant="subtle"
-										size="sm"
-										color="red"
-										onClick={() => handleDelete(entry.id)}
-										title="Delete"
-										disabled={deleteEntry.isPending}
-									>
-										<Trash2 size={14} />
-									</ActionIcon>
-								</div>
-							</div>
+							<HistoryItem
+								key={entry.id}
+								entry={entry}
+								onCopy={handleCopy}
+								onDelete={handleDelete}
+								isDeleting={deleteEntry.isPending}
+							/>
 						))}
 					</div>
 				</div>
